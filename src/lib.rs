@@ -40,7 +40,7 @@ pub async fn main() -> anyhow::Result<()> {
     context.functions().register_udf(Arc::new(
         AsyncScalarUDF::new(Arc::new(A5GeoZarrUdf::new(context.encodings().clone())))
             .into_scalar_udf(),
-    ))?;
+    ));
 
     let query = "
     SELECT ?subject (<https://geosphere.at/fetchGeoZarr>(?object) AS ?fetch)
