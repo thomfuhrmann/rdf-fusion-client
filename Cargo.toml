@@ -1,0 +1,17 @@
+[package]
+name = "rdf-fusion-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+a5-geozarr = { git = "https://github.com/thomfuhrmann/a5-geozarr.git", version = "0.1.0" }
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+datafusion = "55.2.0"
+futures = "0.3.34"
+rdf-fusion = "0.3.1"
+reqwest = { version = "0.13.5", features = ["stream", "json"] }
+tokio = { version = "1.54.1", features = ["full"] }
+
+[dev-dependencies]
+insta = "1.49.0"
