@@ -42,7 +42,7 @@ pub async fn main() -> anyhow::Result<()> {
         .functions()
         .register_udaf(Arc::new(AggregateUDF::new_from_impl(CellSampler::new(
             context.encodings().clone(),
-        ))))?;
+        ))));
 
     // Run the SPARQL query.
     let query = "
@@ -165,7 +165,7 @@ impl Accumulator for CellAccumulator {
     // DataFusion expects this function to return the final value of this aggregator.
     // in this case, this is the number of IRIs containing "spider".
     fn evaluate(&mut self) -> Result<ScalarValue> {
-        let numeric_scalar = NumericFamilyArray::new_int_scalar(self.cells);
+        let numeric_scalar = NumericFamilyArray::new_int_scalar(0);
         let typed_family_scalar = self
             .encoding
             .create_scalar_from_family::<NumericFamily>(numeric_scalar.to_scalar_value())?;
@@ -185,7 +185,7 @@ impl Accumulator for CellAccumulator {
                 DowncastTypedFamilyArray::Iri(array) => {
                     array.inner().iter().for_each(|item: Option<&str>| {
                         if item.is_some_and(|v| v.to_lowercase().contains("spider")) {
-                            self.spiders += 1
+                            // self.spiders += 1
                         }
                     });
                 }
@@ -212,7 +212,7 @@ impl Accumulator for CellAccumulator {
 
         let arr = downcast_value!(states[0], Int32Array);
         if let Some(counts) = &compute::sum(arr) {
-            self.spiders += *counts;
+            // self.spiders += *counts;
         }
 
         Ok(())
