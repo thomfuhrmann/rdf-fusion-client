@@ -5772,6 +5772,7 @@ dependencies = [
  "insta",
  "rdf-fusion",
  "reqwest 0.13.5",
+ "serde_json",
  "thiserror",
  "tokio",
  "url",

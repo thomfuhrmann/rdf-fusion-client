@@ -1,6 +1,6 @@
 // pub mod aggregate;
 
-use a5_geozarr::client::{GeoZarrClient, QueryCoordsBuilder, StoreType};
+use a5_geozarr::client::{GeoZarrClient, QueryCoords, QueryCoordsBuilder, StoreType};
 use anyhow::Context;
 use async_trait::async_trait;
 use datafusion::arrow::array::Array;
@@ -63,7 +63,7 @@ pub async fn main() -> anyhow::Result<()> {
     PREFIX a5: <https://a5geo.org/>
     PREFIX hzb: <https://resource.geosphere.at/hzb/>
 
-    SELECT ?cell (<https://geosphere.at/fetchGeoZarr>(?cell, '2026-10-01T00:00:00Z', 'TM') AS ?cellValue)
+    SELECT ?cell (<https://geosphere.at/fetchGeoZarr>(?cell, '{'temporal_dims': {'time': '2026-11-17T00:00:00Z'}}', 'RR') AS ?cellValue)
     WHERE {
         hzb:2-370-87-25-0-0-0-0-0 a5:hasCell ?cell .
     }
@@ -192,6 +192,9 @@ impl AsyncScalarUDFImpl for A5GeoZarrUdf {
 
                 let datum = args.args()[1].clone();
                 let date_time = unwrap_string(datum, args.number_rows());
+                let query_coords: QueryCoords = serde_json::from_str(data_time).map_err(|e| {
+                    DataFusionError::Execution(format!("Failed to parse QueryCoords JSON: {}", e))
+                })?;
                 let Some(date_time) = date_time else {
                     return Err(DataFusionError::Execution(
                         "Invalid datetime argument".into(),
@@ -220,7 +223,6 @@ impl AsyncScalarUDFImpl for A5GeoZarrUdf {
                 let query_coords = QueryCoordsBuilder::new()
                     .temporal_dim_str("time", date_time)
                     .map_err(|e| DataFusionError::External(Box::new(e)))?
-                    .other_dim("z", 0)
                     .build();
 
                 let data = self
@@ -323,7 +325,7 @@ mod tests {
     #[tokio::test]
     async fn test_custom_udf() -> anyhow::Result<()> {
         let store = Store::new_in_memory().await;
-        let context = store.context();
+        let _context = store.context();
 
         // let udf = ContainsSpiderUDF::new(context.encodings().clone());
         // context
