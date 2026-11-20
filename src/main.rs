@@ -1,6 +1,7 @@
 // pub mod aggregate;
 
-use a5_geozarr::client::{GeoZarrClient, QueryCoords, QueryCoordsBuilder, StoreType};
+use a5_geozarr::client::{GeoZarrClient, SampledData, StoreType};
+use a5_geozarr::query::{QueryCoordsBuilder, QuerySelection};
 use anyhow::Context;
 use async_trait::async_trait;
 use datafusion::arrow::array::Array;
@@ -28,6 +29,7 @@ use rdf_fusion::functions::scalar::args::ScalarSparqlFunctionArgs;
 use rdf_fusion::functions::scalar::signature::SparqlUDFTypeSignatureBuilder;
 use rdf_fusion::storage::rdf_files::RdfFileScanOptions;
 use rdf_fusion::store::Store;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hasher;
 use std::path::{Path, PathBuf};
@@ -59,16 +61,29 @@ pub async fn main() -> anyhow::Result<()> {
     ));
 
     // TODO: maybe use "2026-10-01T00:00:00Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> instead of string?
-    let query = "
+    //
+    // "{\"time\": {\"Point\": \"2025-11-17T00:00:00Z\"}}"
+    // "{\"time\": {\"Range\": {\"start\": \"2025-11-17T00:00:00Z\", \"end\": \"2025-11-17T00:00:00Z\"}}}"
+    let query_coords = QueryCoordsBuilder::new()
+        .insert_point_dt_str("time", "2025-11-17T00:00:00Z")
+        .expect("should parse")
+        .build();
+
+    let json_coords = serde_json::to_string(&query_coords).unwrap();
+
+    let query = format!(
+        r#"
     PREFIX a5: <https://a5geo.org/>
     PREFIX hzb: <https://resource.geosphere.at/hzb/>
 
-    SELECT ?cell (<https://geosphere.at/fetchGeoZarr>(?cell, '{'temporal_dims': {'time': '2026-11-17T00:00:00Z'}}', 'RR') AS ?cellValue)
-    WHERE {
+    SELECT ?cell (<https://geosphere.at/fetchGeoZarr>(?cell, '{}', 'RR') AS ?cellValue)
+    WHERE {{
         hzb:2-370-87-25-0-0-0-0-0 a5:hasCell ?cell .
-    }
-    ";
-    let result = store.query(query).await?;
+    }}
+    "#,
+        json_coords
+    );
+    let result = store.query(&query).await?;
 
     if let QueryResults::Solutions(mut stream) = result {
         while let Some(solution) = stream.next().await {
@@ -190,17 +205,23 @@ impl AsyncScalarUDFImpl for A5GeoZarrUdf {
                         Vec::new()
                     };
 
+                // parse query coordinates
                 let datum = args.args()[1].clone();
-                let date_time = unwrap_string(datum, args.number_rows());
-                let query_coords: QueryCoords = serde_json::from_str(data_time).map_err(|e| {
-                    DataFusionError::Execution(format!("Failed to parse QueryCoords JSON: {}", e))
-                })?;
-                let Some(date_time) = date_time else {
+                let datum_str = unwrap_string(datum, args.number_rows());
+                let Some(datum_str) = datum_str else {
                     return Err(DataFusionError::Execution(
-                        "Invalid datetime argument".into(),
+                        "Invalid query coordinates".into(),
                     ));
                 };
+                let query_coords: HashMap<String, QuerySelection> =
+                    serde_json::from_str(&datum_str).map_err(|e| {
+                        DataFusionError::Execution(format!(
+                            "Failed to parse QueryCoords JSON: {}",
+                            e
+                        ))
+                    })?;
 
+                // parse data variable
                 let datum = args.args()[2].clone();
                 let data_var = unwrap_string(datum, args.number_rows());
                 let Some(data_var) = data_var else {
@@ -219,30 +240,29 @@ impl AsyncScalarUDFImpl for A5GeoZarrUdf {
                 let virtual_chunks_url = Url::parse("https://public.hub.geosphere.at/")
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-                // parse query coordinates
-                let query_coords = QueryCoordsBuilder::new()
-                    .temporal_dim_str("time", date_time)
-                    .map_err(|e| DataFusionError::External(Box::new(e)))?
-                    .build();
-
                 let data = self
                     .geozarr_client
                     .fetch_data(
                         &url,
                         &cell_ids,
                         &data_var,
-                        &query_coords,
+                        query_coords,
                         StoreType::Icechunk,
                         Some(&virtual_chunks_url),
                     )
                     .await
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-                let tf_arr = self.encodings.typed_family().create_array_from_family(
-                    NumericFamilyArray::new_ints(Int32Array::from(data)),
-                )?;
+                match data {
+                    SampledData::I32(data) => {
+                        let tf_arr = self.encodings.typed_family().create_array_from_family(
+                            NumericFamilyArray::new_ints(Int32Array::from(data)),
+                        )?;
 
-                Ok(ColumnarValue::Array(tf_arr.into_array_ref()))
+                        Ok(ColumnarValue::Array(tf_arr.into_array_ref()))
+                    }
+                    _ => return Err(DataFusionError::Execution("Unexpected data type".into())),
+                }
             }
             _ => exec_err!("A5GeoZarrUdf was called with an unsupported encoding"),
         }
