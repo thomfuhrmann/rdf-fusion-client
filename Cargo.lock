@@ -13,7 +13,7 @@ dependencies = [
 [[package]]
 name = "a5-geozarr"
 version = "0.1.0"
-source = "git+https://github.com/thomfuhrmann/a5-geozarr.git#be3809310cd000638c0629f37c910182daa4855e"
+source = "git+https://github.com/thomfuhrmann/a5-geozarr.git#0bb11a2b1788bef92e6ca05804bf5a30c0650e99"
 dependencies = [
  "a5",
  "bytemuck",
