@@ -66,12 +66,17 @@ pub async fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+    use std::path::PathBuf;
+
     use super::*;
+    use datafusion::datasource::listing::ListingTableUrl;
     use insta::assert_snapshot;
     use rdf_fusion::common::RdfFormat;
     use rdf_fusion::execution::results::QueryResultsFormat;
     use rdf_fusion::store::Store;
     use tokio::fs::File;
+    use url::Url;
 
     #[tokio::test]
     async fn test_custom_udf() -> anyhow::Result<()> {
@@ -115,6 +120,35 @@ mod tests {
         <https://geosphere.at/#spiderman>	<http://xmlns.com/foaf/0.1/name>	"Spiderman"
         "#);
 
+        Ok(())
+    }
+
+    fn resolve_location(location: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let stripped = location.strip_prefix("file://").unwrap_or(location);
+        if location.contains("://") && !location.starts_with("file://") {
+            Ok(location.to_owned())
+        } else {
+            let path = PathBuf::from(stripped);
+            let absolute_path = if path.is_absolute() {
+                path
+            } else {
+                env::current_dir()?.join(path)
+            };
+            let mut url = Url::from_file_path(absolute_path).unwrap().to_string();
+            // A trailing `/` denotes a directory, which `Url::from_file_path` drops.
+            // if location.ends_with('/') && !url.ends_with('/') {
+            //     url.push('/');
+            // }
+            Ok(url)
+        }
+    }
+
+    #[test]
+    fn test_resolve() -> Result<(), Box<dyn std::error::Error>> {
+        let location_str = resolve_location(&"file:///home/thomas/Downloads/test/")?;
+        let location_url = Url::parse(&location_str)?;
+
+        println!("{location_url}");
         Ok(())
     }
 }
